@@ -7,8 +7,8 @@ import torch.nn.functional as F
 from torch.nn import CrossEntropyLoss
 from torch.nn import CosineEmbeddingLoss
 
-from pytorch_pretrained_bert.modeling import BertModel
-from pytorch_pretrained_bert.modeling import BertPreTrainedModel
+from transformers import BertModel
+from transformers import BertPreTrainedModel
 
 class BertForUtteranceEncoding(BertPreTrainedModel):
     def __init__(self, config):
@@ -18,7 +18,9 @@ class BertForUtteranceEncoding(BertPreTrainedModel):
         self.bert = BertModel(config)
 
     def forward(self, input_ids, token_type_ids, attention_mask, output_all_encoded_layers=False):
-        return self.bert(input_ids, token_type_ids, attention_mask, output_all_encoded_layers)
+        output = self.bert(input_ids = input_ids, token_type_ids = token_type_ids, attention_mask = attention_mask,
+                         output_hidden_states  = output_all_encoded_layers)
+        return output["last_hidden_state"], None
 
 
 class MultiHeadAttention(nn.Module):
@@ -92,7 +94,7 @@ class BeliefTracker(nn.Module):
 
         ### Utterance Encoder
         self.utterance_encoder = BertForUtteranceEncoding.from_pretrained(
-            os.path.join(args.bert_dir, 'bert-base-uncased.model')
+             'bert-base-uncased'
         )
         self.bert_output_dim = self.utterance_encoder.config.hidden_size
         self.hidden_dropout_prob = self.utterance_encoder.config.hidden_dropout_prob
@@ -102,7 +104,7 @@ class BeliefTracker(nn.Module):
 
         ### slot, slot-value Encoder (not trainable)
         self.sv_encoder = BertForUtteranceEncoding.from_pretrained(
-                os.path.join(args.bert_dir, 'bert-base-uncased.model'))
+                 'bert-base-uncased')
         for p in self.sv_encoder.bert.parameters():
             p.requires_grad = False
 

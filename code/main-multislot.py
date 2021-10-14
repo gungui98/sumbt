@@ -14,8 +14,8 @@ import torch
 from torch.utils.data import TensorDataset, DataLoader, RandomSampler, SequentialSampler
 from torch.utils.data.distributed import DistributedSampler
 
-from pytorch_pretrained_bert.tokenization import BertTokenizer
-from pytorch_pretrained_bert.optimization import BertAdam
+from transformers import BertTokenizer
+from transformers import AdamW as BertAdam
 
 from tensorboardX import SummaryWriter
 
@@ -23,6 +23,7 @@ logging.basicConfig(format='%(asctime)s - %(levelname)s - %(name)s -   %(message
                     datefmt='%m/%d/%Y %H:%M:%S',
                     level=logging.INFO)
 logger = logging.getLogger(__name__)
+
 
 class InputExample(object):
     """A single training/test example for simple sequence classification."""
@@ -56,6 +57,7 @@ class InputFeatures(object):
 
 class DataProcessor(object):
     """Base class for data converters for sequence classification data sets."""
+
     def get_train_examples(self, data_dir):
         """Gets a collection of `InputExample`s for the train set."""
         raise NotImplementedError()
@@ -75,7 +77,7 @@ class DataProcessor(object):
             reader = csv.reader(f, delimiter="\t", quotechar=quotechar)
             lines = []
             for line in reader:
-                if len(line) > 0 and line[0][0] == '#':     # ignore comments (starting with '#')
+                if len(line) > 0 and line[0][0] == '#':  # ignore comments (starting with '#')
                     continue
                 lines.append(line)
             return lines
@@ -88,7 +90,7 @@ class Processor(DataProcessor):
         super(Processor, self).__init__()
 
         # WOZ2.0 dataset
-        if config.data_dir == "data/woz" or config.data_dir=="data/woz-turn":
+        if config.data_dir == "data/woz" or config.data_dir == "data/woz-turn":
             fp_ontology = open(os.path.join(config.data_dir, "ontology_dstc2_en.json"), "r")
             ontology = json.load(fp_ontology)
             ontology = ontology["informable"]
@@ -107,9 +109,10 @@ class Processor(DataProcessor):
             fp_ontology.close()
 
             if not config.target_slot == 'all':
-                slot_idx = {'attraction':'0:1:2', 'bus':'3:4:5:6', 'hospital':'7', 'hotel':'8:9:10:11:12:13:14:15:16:17',\
-                            'restaurant':'18:19:20:21:22:23:24', 'taxi':'25:26:27:28', 'train':'29:30:31:32:33:34'}
-                target_slot =[]
+                slot_idx = {'attraction': '0:1:2', 'bus': '3:4:5:6', 'hospital': '7',
+                            'hotel': '8:9:10:11:12:13:14:15:16:17', \
+                            'restaurant': '18:19:20:21:22:23:24', 'taxi': '25:26:27:28', 'train': '29:30:31:32:33:34'}
+                target_slot = []
                 for key, value in slot_idx.items():
                     if key != config.target_slot:
                         target_slot.append(value)
@@ -127,7 +130,7 @@ class Processor(DataProcessor):
         if config.target_slot == 'all':
             self.target_slot_idx = [*range(0, nslots)]
         else:
-            self.target_slot_idx = sorted([ int(x) for x in config.target_slot.split(':')])
+            self.target_slot_idx = sorted([int(x) for x in config.target_slot.split(':')])
 
         for idx in range(0, nslots):
             if not idx in self.target_slot_idx:
@@ -159,7 +162,7 @@ class Processor(DataProcessor):
 
     def get_labels(self):
         """See base class."""
-        return [ self.ontology[slot] for slot in self.target_slot]
+        return [self.ontology[slot] for slot in self.target_slot]
 
     def _create_examples(self, lines, set_type, accumulation=False):
         """Creates examples for the training and dev sets."""
@@ -180,7 +183,7 @@ class Processor(DataProcessor):
                 text_a = line[2]  # line[2]: user utterance
                 text_b = line[3]  # line[3]: system response
 
-            label = [line[4+idx] for idx in self.target_slot_idx]
+            label = [line[4 + idx] for idx in self.target_slot_idx]
 
             examples.append(
                 InputExample(guid=guid, text_a=text_a, text_b=text_b, label=label))
@@ -202,7 +205,7 @@ def convert_examples_to_features(examples, label_list, max_seq_length, tokenizer
     for (ex_index, example) in enumerate(examples):
         if max_turn < int(example.guid.split('-')[2]):
             max_turn = int(example.guid.split('-')[2])
-    max_turn_length = min(max_turn+1, max_turn_length)
+    max_turn_length = min(max_turn + 1, max_turn_length)
     logger.info("max_turn_length = %d" % max_turn)
 
     for (ex_index, example) in enumerate(examples):
@@ -276,8 +279,8 @@ def convert_examples_to_features(examples, label_list, max_seq_length, tokenizer
             if prev_turn_idx < max_turn_length:
                 features += [InputFeatures(input_ids=all_padding,
                                            input_len=all_padding_len,
-                                           label_id=[-1]*slot_dim)]\
-                            *(max_turn_length - prev_turn_idx - 1)
+                                           label_id=[-1] * slot_dim)] \
+                            * (max_turn_length - prev_turn_idx - 1)
             assert len(features) % max_turn_length == 0
 
         if prev_dialogue_idx is None or prev_turn_idx < max_turn_length:
@@ -292,12 +295,12 @@ def convert_examples_to_features(examples, label_list, max_seq_length, tokenizer
     if prev_turn_idx < max_turn_length:
         features += [InputFeatures(input_ids=all_padding,
                                    input_len=all_padding_len,
-                                   label_id=[-1]*slot_dim)]\
+                                   label_id=[-1] * slot_dim)] \
                     * (max_turn_length - prev_turn_idx - 1)
     assert len(features) % max_turn_length == 0
 
     all_input_ids = torch.tensor([f.input_ids for f in features], dtype=torch.long)
-    all_input_len= torch.tensor([f.input_len for f in features], dtype=torch.long)
+    all_input_len = torch.tensor([f.input_len for f in features], dtype=torch.long)
     all_label_ids = torch.tensor([f.label_id for f in features], dtype=torch.long)
 
     # reshape tensors to [#batch, #max_turn_length, #max_seq_length]
@@ -381,7 +384,7 @@ def main():
                         default='all',
                         type=str,
                         required=True,
-                        help="Target slot idx to train model. ex. 'all', '0:1:2', or an excluding slot name 'attraction'" )
+                        help="Target slot idx to train model. ex. 'all', '0:1:2', or an excluding slot name 'attraction'")
     parser.add_argument("--tf_dir",
                         default='tensorboard',
                         type=str,
@@ -391,7 +394,7 @@ def main():
                         default='rnn',
                         type=str,
                         required=True,
-                        help="nbt type: rnn or transformer" )
+                        help="nbt type: rnn or transformer")
     parser.add_argument("--fix_utterance_encoder",
                         action='store_true',
                         help="Do not train BERT utterance encoder")
@@ -502,8 +505,8 @@ def main():
     args = parser.parse_args()
 
     # check output_dir
-    if os.path.exists(args.output_dir) and os.listdir(args.output_dir) and args.do_train:
-        raise ValueError("Output directory ({}) already exists and is not empty.".format(args.output_dir))
+    # if os.path.exists(args.output_dir) and os.listdir(args.output_dir) and args.do_train:
+    #     raise ValueError("Output directory ({}) already exists and is not empty.".format(args.output_dir))
     os.makedirs(args.output_dir, exist_ok=True)
 
     if not args.do_train and not args.do_eval and not args.do_analyze:
@@ -517,13 +520,14 @@ def main():
         summary_writer = None
 
     # Logger
-    fileHandler = logging.FileHandler(os.path.join(args.output_dir, "%s.txt"%(tb_file_name)))
+    fileHandler = logging.FileHandler(os.path.join(args.output_dir, "%s.txt" % (tb_file_name)))
     logger.addHandler(fileHandler)
     logger.info(args)
 
     # CUDA setup
     if args.local_rank == -1 or args.no_cuda:
         device = torch.device("cuda" if torch.cuda.is_available() and not args.no_cuda else "cpu")
+
         n_gpu = torch.cuda.device_count()
     else:
         torch.cuda.set_device(args.local_rank)
@@ -547,7 +551,6 @@ def main():
     if n_gpu > 0:
         torch.cuda.manual_seed_all(args.seed)
 
-
     ###############################################################################
     # Load data
     ###############################################################################
@@ -555,13 +558,13 @@ def main():
     # Get Processor
     processor = Processor(args)
     label_list = processor.get_labels()
-    num_labels = [len(labels) for labels in label_list] # number of slot-values in each slot-type
+    num_labels = [len(labels) for labels in label_list]  # number of slot-values in each slot-type
 
     # tokenizer
-    vocab_dir = os.path.join(args.bert_dir, '%s-vocab.txt' % args.bert_model)
-    if not os.path.exists(vocab_dir):
-        raise ValueError("Can't find %s " % vocab_dir)
-    tokenizer = BertTokenizer.from_pretrained(vocab_dir, do_lower_case=args.do_lower_case)
+    # vocab_dir = os.path.join(args.bert_dir, '' % args.bert_model)
+    # if not os.path.exists(vocab_dir):
+    #     raise ValueError("Can't find %s " % vocab_dir)
+    tokenizer = BertTokenizer.from_pretrained(args.bert_model, do_lower_case=args.do_lower_case)
 
     num_train_steps = None
     accumulation = False
@@ -575,14 +578,16 @@ def main():
             train_examples, label_list, args.max_seq_length, tokenizer, args.max_turn_length)
 
         num_train_batches = all_input_ids.size(0)
-        num_train_steps = int(num_train_batches / args.train_batch_size / args.gradient_accumulation_steps * args.num_train_epochs)
+        num_train_steps = int(
+            num_train_batches / args.train_batch_size / args.gradient_accumulation_steps * args.num_train_epochs)
 
         logger.info("***** Running training *****")
         logger.info("  Num examples = %d", len(train_examples))
         logger.info("  Batch size = %d", args.train_batch_size)
         logger.info("  Num steps = %d", num_train_steps)
 
-        all_input_ids, all_input_len, all_label_ids = all_input_ids.to(device), all_input_len.to(device), all_label_ids.to(device)
+        all_input_ids, all_input_len, all_label_ids = all_input_ids.to(device), all_input_len.to(
+            device), all_label_ids.to(device)
 
         train_data = TensorDataset(all_input_ids, all_input_len, all_label_ids)
         if args.local_rank == -1:
@@ -614,7 +619,7 @@ def main():
     ###############################################################################
 
     # Prepare model
-    if args.nbt =='rnn':
+    if args.nbt == 'rnn':
         from BeliefTrackerSlotQueryMultiSlot import BeliefTracker
     elif args.nbt == 'transformer':
         from BeliefTrackerSlotQueryMultiSlotTransformer import BeliefTracker
@@ -695,8 +700,8 @@ def main():
         else:
             optimizer = BertAdam(optimizer_grouped_parameters,
                                  lr=args.learning_rate,
-                                 warmup=args.warmup_proportion,
-                                 t_total=t_total)
+
+                                 )
         logger.info(optimizer)
 
     ###############################################################################
@@ -748,8 +753,9 @@ def main():
                     summary_writer.add_scalar("Train/JointAcc", acc, global_step)
                     if n_gpu == 1:
                         for i, slot in enumerate(processor.target_slot):
-                            summary_writer.add_scalar("Train/Loss_%s" % slot.replace(' ','_'), loss_slot[i], global_step)
-                            summary_writer.add_scalar("Train/Acc_%s" % slot.replace(' ','_'), acc_slot[i], global_step)
+                            summary_writer.add_scalar("Train/Loss_%s" % slot.replace(' ', '_'), loss_slot[i],
+                                                      global_step)
+                            summary_writer.add_scalar("Train/Acc_%s" % slot.replace(' ', '_'), acc_slot[i], global_step)
 
                 tr_loss += loss.item()
                 nb_tr_examples += input_ids.size(0)
@@ -784,20 +790,20 @@ def main():
                     if n_gpu == 1:
                         loss, loss_slot, acc, acc_slot, _ = model(input_ids, input_len, label_ids, n_gpu)
                     else:
-                        loss, _, acc, acc_slot, _= model(input_ids, input_len, label_ids, n_gpu)
+                        loss, _, acc, acc_slot, _ = model(input_ids, input_len, label_ids, n_gpu)
 
                         # average to multi-gpus
                         loss = loss.mean()
                         acc = acc.mean()
                         acc_slot = acc_slot.mean(0)
 
-                num_valid_turn = torch.sum(label_ids[:,:,0].view(-1) > -1, 0).item()
+                num_valid_turn = torch.sum(label_ids[:, :, 0].view(-1) > -1, 0).item()
                 dev_loss += loss.item() * num_valid_turn
                 dev_acc += acc.item() * num_valid_turn
 
                 if n_gpu == 1:
                     if dev_loss_slot is None:
-                        dev_loss_slot = [ l * num_valid_turn for l in loss_slot]
+                        dev_loss_slot = [l * num_valid_turn for l in loss_slot]
                         dev_acc_slot = acc_slot * num_valid_turn
                     else:
                         for i, l in enumerate(loss_slot):
@@ -818,8 +824,10 @@ def main():
                 summary_writer.add_scalar("Validate/Acc", dev_acc, global_step)
                 if n_gpu == 1:
                     for i, slot in enumerate(processor.target_slot):
-                        summary_writer.add_scalar("Validate/Loss_%s" % slot.replace(' ','_'), dev_loss_slot[i]/nb_dev_examples, global_step)
-                        summary_writer.add_scalar("Validate/Acc_%s" % slot.replace(' ','_'), dev_acc_slot[i], global_step)
+                        summary_writer.add_scalar("Validate/Loss_%s" % slot.replace(' ', '_'),
+                                                  dev_loss_slot[i] / nb_dev_examples, global_step)
+                        summary_writer.add_scalar("Validate/Acc_%s" % slot.replace(' ', '_'), dev_acc_slot[i],
+                                                  global_step)
 
             dev_loss = round(dev_loss, 6)
             if last_update is None or dev_loss < best_loss:
@@ -835,13 +843,14 @@ def main():
                 best_loss = dev_loss
                 best_acc = dev_acc
 
-                logger.info("*** Model Updated: Epoch=%d, Validation Loss=%.6f, Validation Acc=%.6f ***" % (last_update, best_loss, best_acc))
+                logger.info("*** Model Updated: Epoch=%d, Validation Loss=%.6f, Validation Acc=%.6f ***" % (
+                last_update, best_loss, best_acc))
             else:
-                logger.info("*** Model NOT Updated: Epoch=%d, Validation Loss=%.6f, Validation Acc=%.6f  ***" % (epoch, dev_loss, dev_acc))
+                logger.info("*** Model NOT Updated: Epoch=%d, Validation Loss=%.6f, Validation Acc=%.6f  ***" % (
+                epoch, dev_loss, dev_acc))
 
             if last_update + args.patience <= epoch:
                 break
-
 
     ###############################################################################
     # Evaluation
@@ -880,7 +889,8 @@ def main():
         eval_examples = processor.get_test_examples(args.data_dir, accumulation=accumulation)
         all_input_ids, all_input_len, all_label_ids = convert_examples_to_features(
             eval_examples, label_list, args.max_seq_length, tokenizer, args.max_turn_length)
-        all_input_ids, all_input_len, all_label_ids = all_input_ids.to(device), all_input_len.to(device), all_label_ids.to(device)
+        all_input_ids, all_input_len, all_label_ids = all_input_ids.to(device), all_input_len.to(
+            device), all_label_ids.to(device)
         logger.info("***** Running evaluation *****")
         logger.info("  Num examples = %d", len(eval_examples))
         logger.info("  Batch size = %d", args.eval_batch_size)
@@ -896,8 +906,8 @@ def main():
         eval_loss_slot, eval_acc_slot = None, None
         nb_eval_steps, nb_eval_examples = 0, 0
 
-        accuracies = {'joint7':0, 'slot7':0, 'joint5':0, 'slot5':0, 'joint_rest':0, 'slot_rest':0,
-                      'num_turn':0, 'num_slot7':0, 'num_slot5':0, 'num_slot_rest':0}
+        accuracies = {'joint7': 0, 'slot7': 0, 'joint5': 0, 'slot5': 0, 'joint_rest': 0, 'slot_rest': 0,
+                      'num_turn': 0, 'num_slot7': 0, 'num_slot5': 0, 'num_slot_rest': 0}
 
         for input_ids, input_len, label_ids in tqdm(eval_dataloader, desc="Evaluating"):
             if input_ids.dim() == 2:
@@ -916,7 +926,7 @@ def main():
 
             accuracies = eval_all_accs(pred_slot, label_ids, accuracies)
 
-            nb_eval_ex = (label_ids[:,:,0].view(-1) != -1).sum().item()
+            nb_eval_ex = (label_ids[:, :, 0].view(-1) != -1).sum().item()
             nb_eval_examples += nb_eval_ex
             nb_eval_steps += 1
 
@@ -924,7 +934,7 @@ def main():
                 eval_loss += loss.item() * nb_eval_ex
                 eval_accuracy += acc.item() * nb_eval_ex
                 if eval_loss_slot is None:
-                    eval_loss_slot = [ l * nb_eval_ex for l in loss_slot]
+                    eval_loss_slot = [l * nb_eval_ex for l in loss_slot]
                     eval_acc_slot = acc_slot * nb_eval_ex
                 else:
                     for i, l in enumerate(loss_slot):
@@ -945,9 +955,9 @@ def main():
             result = {'eval_loss': eval_loss,
                       'eval_accuracy': eval_accuracy,
                       'loss': loss,
-                      'eval_loss_slot':'\t'.join([ str(val/ nb_eval_examples) for val in eval_loss_slot]),
-                      'eval_acc_slot':'\t'.join([ str((val).item()) for val in eval_acc_slot])
-                        }
+                      'eval_loss_slot': '\t'.join([str(val / nb_eval_examples) for val in eval_loss_slot]),
+                      'eval_acc_slot': '\t'.join([str((val).item()) for val in eval_acc_slot])
+                      }
         else:
             result = {'eval_loss': eval_loss,
                       'eval_accuracy': eval_accuracy,
@@ -955,7 +965,7 @@ def main():
                       }
 
         out_file_name = 'eval_results'
-        if args.target_slot=='all':
+        if args.target_slot == 'all':
             out_file_name += '_all'
         output_eval_file = os.path.join(args.output_dir, "%s.txt" % out_file_name)
 
@@ -968,70 +978,38 @@ def main():
 
         out_file_name = 'eval_all_accuracies'
         with open(os.path.join(args.output_dir, "%s.txt" % out_file_name), 'w') as f:
-            f.write('joint acc (7 domain) : slot acc (7 domain) : joint acc (5 domain): slot acc (5 domain): joint restaurant : slot acc restaurant \n')
+            f.write(
+                'joint acc (7 domain) : slot acc (7 domain) : joint acc (5 domain): slot acc (5 domain): joint restaurant : slot acc restaurant \n')
             f.write('%.5f : %.5f : %.5f : %.5f : %.5f : %.5f \n' % (
-                (accuracies['joint7']/accuracies['num_turn']).item(),
-                (accuracies['slot7']/accuracies['num_slot7']).item(),
-                (accuracies['joint5']/accuracies['num_turn']).item(),
+                (accuracies['joint7'] / accuracies['num_turn']).item(),
+                (accuracies['slot7'] / accuracies['num_slot7']).item(),
+                (accuracies['joint5'] / accuracies['num_turn']).item(),
                 (accuracies['slot5'] / accuracies['num_slot5']).item(),
-                (accuracies['joint_rest']/accuracies['num_turn']).item(),
+                (accuracies['joint_rest'] / accuracies['num_turn']).item(),
                 (accuracies['slot_rest'] / accuracies['num_slot_rest']).item()
             ))
 
-def eval_all_accs(pred_slot, labels, accuracies):
 
-    def _eval_acc(_pred_slot, _labels):
-        slot_dim = _labels.size(-1)
-        accuracy = (_pred_slot == _labels).view(-1, slot_dim)
-        num_turn = torch.sum(_labels[:, :, 0].view(-1) > -1, 0).float()
-        num_data = torch.sum(_labels > -1).float()
-        # joint accuracy
-        joint_acc = sum(torch.sum(accuracy, 1) / slot_dim).float()
-        # slot accuracy
-        slot_acc = torch.sum(accuracy).float()
-        return joint_acc, slot_acc, num_turn, num_data
 
-    # 7 domains
-    joint_acc, slot_acc, num_turn, num_data = _eval_acc(pred_slot, labels)
-    accuracies['joint7'] += joint_acc
-    accuracies['slot7'] += slot_acc
-    accuracies['num_turn'] += num_turn
-    accuracies['num_slot7'] += num_data
-
-    # restaurant domain
-    joint_acc, slot_acc, num_turn, num_data = _eval_acc(pred_slot[:,:,18:25], labels[:,:,18:25])
-    accuracies['joint_rest'] += joint_acc
-    accuracies['slot_rest'] += slot_acc
-    accuracies['num_slot_rest'] += num_data
-
-    pred_slot5 = torch.cat((pred_slot[:,:,0:3], pred_slot[:,:,8:]), 2)
-    label_slot5 = torch.cat((labels[:,:,0:3], labels[:,:,8:]), 2)
-
-    # 5 domains (excluding bus and hotel domain)
-    joint_acc, slot_acc, num_turn, num_data = _eval_acc(pred_slot5, label_slot5)
-    accuracies['joint5'] += joint_acc
-    accuracies['slot5'] += slot_acc
-    accuracies['num_slot5'] += num_data
-
-    return accuracies
 
 def save_configure(args, num_labels, ontology):
-    with open(os.path.join(args.output_dir, "config.json"),'w') as outfile:
-        data = { "hidden_dim": args.hidden_dim,
+    with open(os.path.join(args.output_dir, "config.json"), 'w') as outfile:
+        data = {"hidden_dim": args.hidden_dim,
                 "num_rnn_layers": args.num_rnn_layers,
                 "zero_init_rnn": args.zero_init_rnn,
                 "max_seq_length": args.max_seq_length,
                 "max_label_length": args.max_label_length,
                 "num_labels": num_labels,
                 "attn_head": args.attn_head,
-                 "distance_metric": args.distance_metric,
-                 "fix_utterance_encoder": args.fix_utterance_encoder,
-                 "task_name": args.task_name,
-                 "bert_dir": args.bert_dir,
-                 "bert_model": args.bert_model,
-                 "do_lower_case": args.do_lower_case,
-                 "ontology": ontology}
+                "distance_metric": args.distance_metric,
+                "fix_utterance_encoder": args.fix_utterance_encoder,
+                "task_name": args.task_name,
+                "bert_dir": args.bert_dir,
+                "bert_model": args.bert_model,
+                "do_lower_case": args.do_lower_case,
+                "ontology": ontology}
         json.dump(data, outfile, indent=4)
+
 
 if __name__ == "__main__":
     main()
