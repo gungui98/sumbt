@@ -4,3 +4,4 @@ tensorboard*/
 slurm-*.out
 *.pyc
 *.swp
+.idea

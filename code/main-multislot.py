@@ -527,7 +527,6 @@ def main():
     # CUDA setup
     if args.local_rank == -1 or args.no_cuda:
         device = torch.device("cuda" if torch.cuda.is_available() and not args.no_cuda else "cpu")
-
         n_gpu = torch.cuda.device_count()
     else:
         torch.cuda.set_device(args.local_rank)
@@ -990,6 +989,41 @@ def main():
             ))
 
 
+def eval_all_accs(pred_slot, labels, accuracies):
+    def _eval_acc(_pred_slot, _labels):
+        slot_dim = _labels.size(-1)
+        accuracy = (_pred_slot == _labels).view(-1, slot_dim)
+        num_turn = torch.sum(_labels[:, :, 0].view(-1) > -1, 0).float()
+        num_data = torch.sum(_labels > -1).float()
+        # joint accuracy
+        joint_acc = sum(torch.sum(accuracy, 1) / slot_dim).float()
+        # slot accuracy
+        slot_acc = torch.sum(accuracy).float()
+        return joint_acc, slot_acc, num_turn, num_data
+
+    # 7 domains
+    joint_acc, slot_acc, num_turn, num_data = _eval_acc(pred_slot, labels)
+    accuracies['joint7'] += joint_acc
+    accuracies['slot7'] += slot_acc
+    accuracies['num_turn'] += num_turn
+    accuracies['num_slot7'] += num_data
+
+    # restaurant domain
+    joint_acc, slot_acc, num_turn, num_data = _eval_acc(pred_slot[:, :, 18:25], labels[:, :, 18:25])
+    accuracies['joint_rest'] += joint_acc
+    accuracies['slot_rest'] += slot_acc
+    accuracies['num_slot_rest'] += num_data
+
+    pred_slot5 = torch.cat((pred_slot5[:, :, 0:3], pred_slot[:, :, 8:]), 2)
+    label_slot5 = torch.cat((labels[:, :, 0:3], labels[:, :, 8:]), 2)
+
+    # 5 domains (excluding bus and hotel domain)
+    joint_acc, slot_acc, num_turn, num_data = _eval_acc(pred_slot5, label_slot5)
+    accuracies['joint5'] += joint_acc
+    accuracies['slot5'] += slot_acc
+    accuracies['num_slot5'] += num_data
+
+    return accuracies
 
 
 def save_configure(args, num_labels, ontology):
